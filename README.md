@@ -12,6 +12,8 @@ This project is a web graphical implementation of [wireguard installation script
 - Generate client configuration QR code
 
 ## Usage
+Install Node.js first if it is not already installed. Follow the official instructions for your operating system: [link](https://nodejs.org/en/download/package-manager/).
+
 Clone repository, install dependencies:
 ```shell
 cd ~
