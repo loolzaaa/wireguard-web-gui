@@ -26,3 +26,30 @@ export default {
     mode: 'production' // 'production' or 'development'
 }
 ```
+
+## Service mode
+You can use systemd to run this application as a service.  
+First, make a local copy of the `service/ubuntu/wg-gui.service` file:
+```shell
+cd /path/to/app/root/directory/
+cp service/ubuntu/wg-gui.service service/ubuntu/wg-gui.service.local
+```
+Next, in `service/ubuntu/wg-gui.service.local` change *User* and *username*:
+```shell
+nano service/ubuntu/wg-gui.service.local
+```
+```shell
+User=root
+WorkingDirectory=/home/username/wireguard-web-gui
+ExecStart=/usr/bin/node /home/username/wireguard-web-gui/src/app.js
+```
+**Note:** wireguard needs root rights to work.
+
+After that, copy the modified file to system services, run, wait a couple of moments and check:
+```shell
+sudo cp service/ubuntu/wg-gui.service.local /etc/systemd/system/wg-gui.service
+sudo systemctl enable wg-gui.service
+sudo systemctl start wg-gui.service
+sudo systemctl status wg-gui.service
+curl -v http://localhost:8622/clients && echo
+```
