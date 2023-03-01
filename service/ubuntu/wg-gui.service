@@ -1,0 +1,15 @@
+[Unit]
+Description=Wireguard Web GUI service
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=2
+User=root
+WorkingDirectory=/home/username/wireguard-web-gui
+ExecStart=/usr/bin/node /home/username/wireguard-web-gui/src/app.js
+ExecStop=/bin/kill -15 $MAINPID
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wireguard Server</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="https://unpkg.com/element-plus@2.2.32/dist/index.css" />
+<script src="https://unpkg.com/axios@1.1.2/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+
+<body>
+    <div id="app" class="bg">
+        <el-row :gutter="10" justify="center">
+            <el-col :xs="24" :sm="20" :md="16" :lg="12" :xl="9">
+                <h1 style="text-align: center;">Wireguard Server</h1>
+                <el-table :data="clients" style="width: 100%; margin-bottom: 1rem;">
+                    <el-table-column label="Client name">
+                        <template #default="scope">
+                            {{ scope.row }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="" width="100">
+                        <template #default="scope">
+                            <el-button 
+                                type="danger" 
+                                size="small" 
+                                @click="deleteClient(scope.row)">
+                                Delete
+                            </el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                <el-button 
+                    type="primary" 
+                    @click="addClientDialogVisible = true" 
+                    style="width: 100%;">
+                    Add client
+                </el-button>
+            </el-col>
+        </el-row>
+        <el-dialog 
+            v-model="addClientDialogVisible" 
+            title="Add client" 
+            :width="isMobile ? '100%' : 360" 
+            @close="closeAddClientDialog">
+            <el-form :model="client" label-position="top">
+                <el-form-item label="Client name">
+                    <el-input 
+                        v-model="client.name" 
+                        placeholder="Enter client name..." 
+                        :disabled="!!QRCodeSrc"
+                    />
+                </el-form-item>
+                <el-form-item v-if="!QRCodeSrc" label="Client IP V4 Address">
+                    <el-input 
+                        :model-value="client.ipv4" 
+                        placeholder="Enter ipv4..." 
+                        @input="checkIp(4, $event)"
+                    />
+                </el-form-item>
+                <el-form-item v-if="!QRCodeSrc" label="Client IP V6 Address">
+                    <el-input 
+                        :model-value="client.ipv6" 
+                        placeholder="Enter ipv6..." 
+                        @input="checkIp(6, $event)"
+                    />
+                </el-form-item>
+            </el-form>
+            <el-button 
+                v-if="QRCodeSrc" 
+                type="warning" 
+                @click="downloadConfig" 
+                style="width: 100%; margin-bottom: 0.5rem;">
+                Download config
+            </el-button>
+            <img 
+                v-if="QRCodeSrc" 
+                :src="QRCodeSrc" 
+                style="display: block; margin-left: auto; margin-right: auto;" 
+                alt="" 
+                title=""
+            />
+            <template #footer>
+                <el-button v-if="!QRCodeSrc" type="primary" @click="addClient">Add</el-button>
+                <el-button v-if="!QRCodeSrc" @click="closeAddClientDialog">Cancel</el-button>
+                <el-button v-if="QRCodeSrc" @click="closeAddClientDialog">Close</el-button>
+            </template>
+        </el-dialog>
+    </div>
+
+    <script type="module">
+        import env from './env.js';
+
+        new Promise(resolve => {
+            let vueScript = document.createElement('script');
+            vueScript.src = env.mode === 'production' ? 
+                'https://unpkg.com/vue@3.2.47/dist/vue.global.prod.js' : 
+                'https://unpkg.com/vue@3.2.47/dist/vue.global.js';
+            vueScript.onload = () => resolve();
+            document.head.appendChild(vueScript);
+        }).then(() => {
+            return new Promise(resolve => {
+                let elementScript = document.createElement('script');
+                elementScript.src = 'https://unpkg.com/element-plus@2.2.32/dist/index.full.min.js';
+                elementScript.onload = () => resolve();
+                document.head.appendChild(elementScript);
+            });
+        }).then(initApp);
+
+        function initApp() {
+            const { createApp } = Vue;
+            const { ElMessage, ElMessageBox } = ElementPlus;
+
+            const app = createApp({
+                data() {
+                    return {
+                        message: 'Wireguard Server Web GUI',
+                        clients: [],
+                        client: {
+                            name: null,
+                            ipv4: null,
+                            ipv6: null
+                        },
+                        QRCodeSrc: null,
+                        addClientDialogVisible: false,
+                        isMobile: false,
+                        resizeEvent: null,
+                    }
+                },
+                methods: {
+                    updateData() {
+                        axios.get('/clients')
+                            .then(resp => {
+                                if (resp.data.ok) {
+                                    this.clients = [];
+                                    resp.data.data.forEach(el => this.clients.push(el));
+                                } else {
+                                    ElMessage({ showClose: true, message: resp.data.msg, type: 'error' });
+                                }
+                            });
+                        axios.get('/addresses')
+                            .then(resp => {
+                                if (resp.data.ok) {
+                                    this.client.ipv4 = resp.data.data.ipv4;
+                                    this.client.ipv6 = resp.data.data.ipv6;
+                                } else {
+                                    ElMessage({ showClose: true, message: resp.data.msg, type: 'error' });
+                                }
+                            });
+                    },
+                    addClient() {
+                        if (!this.client.name || this.client.name.length < 2) {
+                            ElMessage({ message: 'Client name length must be at least 2', type: 'error' });
+                            return;
+                        }
+                        if (!this.client.ipv4.match(/^(\d{1,3}\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?){1}$/)) {
+                            ElMessage({ message: 'Client IPV4 incorrect format', type: 'error' });
+                            return;
+                        }
+                        if (!this.client.ipv6.match(/^([0-9a-fA-F]{1,4}:){3}:([0-9a-fA-F]{1,4}){1}$/)) {
+                            ElMessage({ message: 'Client IPV6 incorrect format', type: 'error' });
+                            return;
+                        }
+                        ElMessageBox.confirm(`Are you sure you want to create client ${this.client.name}?`, 'Warning', { type: 'warning' })
+                            .then(() => {
+                                axios.post('/clients', this.client)
+                                    .then(resp => {
+                                        if (resp.data.ok) {
+                                            this.processNewClientConfig(resp.data.data);
+                                            this.updateData();
+                                            ElMessage({ message: resp.data.msg, type: 'success' });
+                                        } else {
+                                            if (resp.data.data) {
+                                                console.log(resp.data.data);
+                                            }
+                                            ElMessage({ showClose: true, message: resp.data.msg, type: 'error' });
+                                        }
+                                    });
+                            })
+                            .catch(() => {});
+                    },
+                    deleteClient(clientName) {
+                        ElMessageBox.confirm(`Client ${clientName} will be permanently deleted. Continue?`, 'Warning', { type: 'warning' })
+                            .then(() => {
+                                axios.delete(`/clients/${clientName}`)
+                                    .then(resp => {
+                                        if (resp.data.ok) {
+                                            this.updateData();
+                                            ElMessage({ message: resp.data.msg, type: 'success' });
+                                        } else {
+                                            if (resp.data.data) {
+                                                console.log(resp.data.data);
+                                            }
+                                            ElMessage({ showClose: true, message: resp.data.msg, type: 'error' });
+                                        }
+                                    });
+                            })
+                            .catch(() => {});
+                    },
+                    processNewClientConfig(config) {
+                        this.config = encodeURIComponent(config);
+                        this.QRCodeSrc = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${this.config}`;
+                    },
+                    downloadConfig() {
+                        let element = document.createElement('a');
+                        element.setAttribute('href', 'data:text/plain;charset=utf-8,' + this.config);
+                        element.setAttribute('download', 'wg.conf');
+                        element.style.display = 'none';
+                        document.body.appendChild(element);
+                        element.click();
+                        document.body.removeChild(element);
+                    },
+                    checkIp(version, value) {
+                        if (version === 4) {
+                            let idx = this.client.ipv4.lastIndexOf('.');
+                            let constAddr = this.client.ipv4.substring(0, idx + 1);
+                            if (value.startsWith(constAddr) && value.match(/^(\d{1,3}\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)?$/)) {
+                                this.client.ipv4 = value;
+                            }
+                        } else if (version === 6) {
+                            let idx = this.client.ipv6.lastIndexOf('::');
+                            let constAddr = this.client.ipv6.substring(0, idx + 1);
+                            if (value.startsWith(constAddr) && value.match(/^([0-9a-fA-F]{1,4}:){3}:([0-9a-fA-F]{1,4})?$/)) {
+                                this.client.ipv6 = value;
+                            }
+                        }
+                    },
+                    closeAddClientDialog() {
+                        this.addClientDialogVisible = false;
+                        this.client.name = null;
+                        this.QRCodeSrc = null;
+                        this.config = null;
+                    }
+                },
+                created() {
+                    let updateView = () => this.isMobile = document.documentElement.clientWidth < 426;
+                    updateView();
+                    this.resizeEvent = _.debounce(updateView, 100);
+                    window.addEventListener("resize", this.resizeEvent);
+                    this.updateData();
+                },
+                beforeDestroy: function() {
+                    window.removeEventListener("resize", this.resizeEvent);
+                }
+            })
+            app.use(ElementPlus);
+            app.mount('#app');
+        }
+    </script>
+</body>
+
+</html>
